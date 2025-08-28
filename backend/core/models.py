@@ -74,6 +74,7 @@ class Device(models.Model):
     last_seen = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=3, choices=STATUS_CHOICES, default='off')
     current_value = models.FloatField(null=True, blank=True, help_text="Current in Amps (only for sockets)")
+    previous_fault_state = models.JSONField(default=dict, blank=True, null=True)
 
     def __str__(self):
         return f"{self.name} ({self.device_id}) - Pin: {self.hardware_pin}"
@@ -197,6 +198,7 @@ class DeviceAlert(models.Model):
         ('short_circuit', 'Short Circuit'),
         ('offline', 'Device Offline'),
         ('high_current', 'High Current'),
+        ('device_locked', 'Locked Device'),
     )
     
     device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='alerts')

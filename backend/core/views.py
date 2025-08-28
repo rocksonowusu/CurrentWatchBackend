@@ -88,7 +88,6 @@ class PhoneVerificationView(APIView):
                     
                     # Create a special "test_alert" command for each controller
                     for controller in controllers:
-                        #Create a dummy device for system commands
                         # Create a dummy device for system commands with unique check
                         system_device_id = f"{controller.controller_id}-system"
                         try:
@@ -429,10 +428,7 @@ class DeviceCommandsView(APIView):
                     controller.last_seen = timezone.now()
                     controller.is_online = True
                     controller.save(update_fields=['last_seen', 'is_online'])
-                # controller = Controller.objects.get(controller_id=controller_id)
-                # controller.last_seen = timezone.now()
-                # controller.is_online = True
-                # controller.save()
+                
 
                 
                 self.cleanup_stale_commands(controller)
@@ -770,7 +766,6 @@ class DeviceStatusView(APIView):
                         device.status = 'on' if is_on else 'off'
                         device.last_seen = timezone.now()
 
-
                         # Update current values for sockets
                         current_changed = False
                         if hardware_pin == 'kitchen' and 'kitchen_current' in device_status:
@@ -796,12 +791,11 @@ class DeviceStatusView(APIView):
                                 current_value=device.current_value
                             )
 
-
                     except Device.DoesNotExist:
                         print(f"Device not found for controller {controller_id} and hardware_pin {hardware_pin}")
                         pass
 
-                self.process_device_alerts(controller,device_status)
+                self.process_device_alerts(controller, device_status)
 
                 return Response({
                     'message': 'Status received'
@@ -825,13 +819,18 @@ class DeviceStatusView(APIView):
             # Check for fault states and create alerts/logs
             for device_key in ['kitchen', 'living']:
                 fault_key = f"{device_key}_fault_detected"
-                locked_key = f"{device_key}_locked"
                 lockout_type_key = f"{device_key}_lockout_type"
+                current_fault = device_status.get(fault_key, False)
                 
-                if device_status.get(fault_key, False):
-                    try:
-                        device = Device.objects.get(controller=controller, hardware_pin=device_key)
-                        
+                try:
+                    device = Device.objects.get(controller=controller, hardware_pin=device_key)
+                    
+                    # Get previous fault state - handle both dict and None cases
+                    previous_fault_state = device.previous_fault_state or {}
+                    previous_fault = previous_fault_state.get(device_key, False)
+                    
+                    # Only create alert if fault state CHANGED from False to True
+                    if current_fault and not previous_fault:
                         # Determine alert type from lockout type
                         lockout_type = device_status.get(lockout_type_key, 'unknown')
                         if lockout_type == 'short_circuit':
@@ -844,11 +843,11 @@ class DeviceStatusView(APIView):
                             alert_type = 'offline'
                             message = f'Fault detected in {device.name}'
 
-                        # Create alert (avoid duplicates by checking recent alerts)
+                        # Create alert (check for recent alerts to avoid duplicates)
                         recent_alert = DeviceAlert.objects.filter(
                             device=device,
                             alert_type=alert_type,
-                            created_at__gte=timezone.now() - timedelta(minutes=10)
+                            created_at__gte=timezone.now() - timedelta(minutes=1)  # Reduced from 10 minutes
                         ).first()
 
                         if not recent_alert:
@@ -859,6 +858,16 @@ class DeviceStatusView(APIView):
                                 message=message
                             )
 
+                            # Send WebSocket alert notification
+                            if device.owner:
+                                send_alert_notification(
+                                    user_email=device.owner.email,
+                                    alert_type=alert_type,
+                                    title=f"{device.name} Alert",
+                                    message=message,
+                                    device_id=device.device_id
+                                )
+
                             # Create activity log
                             ActivityLog.log_system_alert(
                                 device=device,
@@ -868,21 +877,35 @@ class DeviceStatusView(APIView):
                                 controller=controller
                             )
 
-                            print(f"🚨 Created alert: {alert_type} for {device.name}")
+                            print(f"🚨 NEW FAULT ALERT: {alert_type} for {device.name}")
+                        else:
+                            print(f"⚠️ Duplicate alert prevented: {alert_type} for {device.name}")
 
-                    except Device.DoesNotExist:
-                        # Device doesn't exist, skip
-                        pass
+                    # Update the previous fault state for this device
+                    if not device.previous_fault_state:
+                        device.previous_fault_state = {}
+                    device.previous_fault_state[device_key] = current_fault
+                    device.save(update_fields=['previous_fault_state'])
+
+                    # Log fault state changes for debugging
+                    if current_fault != previous_fault:
+                        print(f"🔄 Fault state changed for {device.name}: {previous_fault} → {current_fault}")
+
+                except Device.DoesNotExist:
+                    print(f"❌ Device not found for controller {controller.controller_id} and hardware_pin {device_key}")
+                    pass
 
         except Exception as e:
             print(f"❌ Error processing device alerts: {e}")
+            import traceback
+            traceback.print_exc()
 
 class DeviceAlertsView(APIView):
     def post(self, request, format=None):
         """ESP32 sends alerts to backend"""
         try:
             controller_id = request.data.get('controller_id')
-            device_name = request.data.get('device_name')  # This should be hardware_pin
+            device_name = request.data.get('device_name')  
             alert_type = request.data.get('alert_type')
             message = request.data.get('message')
             
@@ -950,7 +973,7 @@ class DeviceAlertsView(APIView):
                 print(f"✅ Alert created: {alert_type} for {device.name}")
                 
                 # TODO: Send push notification to device owner
-                # TODO: Send SMS alert if configured
+                # ✅✅ Process Completed at the Hardware Level
                 
                 return Response({
                     'message': 'Alert received and processed',
@@ -1059,6 +1082,10 @@ class ActivityLogListView(APIView):
                 page = int(request.query_params.get('page', 1))
                 page_size = int(request.query_params.get('page_size', 5))
                 
+                # Get sorting parameters
+                sort_by = request.query_params.get('sort_by', 'timestamp')  # timestamp, type, device
+                sort_order = request.query_params.get('sort_order', 'desc')  # asc, desc
+                
                 # Base queryset - get logs for the user
                 queryset = ActivityLog.objects.filter(user=user).select_related(
                     'device', 'controller', 'room'
@@ -1093,6 +1120,23 @@ class ActivityLogListView(APIView):
                     elif date_filter == 'week':
                         week_ago = now - timedelta(days=7)
                         queryset = queryset.filter(created_at__gte=week_ago)
+                
+                # Apply sorting
+                sort_field_map = {
+                    'timestamp': 'created_at',
+                    'type': 'log_type',
+                    'device': 'device__name',
+                    'room': 'room__name',
+                    'message': 'message'
+                }
+                
+                sort_field = sort_field_map.get(sort_by, 'created_at')
+                
+                # Add descending order prefix if needed
+                if sort_order == 'desc':
+                    sort_field = f'-{sort_field}'
+                
+                queryset = queryset.order_by(sort_field)
                 
                 # Paginate results
                 paginator = Paginator(queryset, page_size)
@@ -1130,6 +1174,10 @@ class ActivityLogListView(APIView):
                         'total_count': paginator.count,
                         'has_next': page_obj.has_next(),
                         'has_previous': page_obj.has_previous()
+                    },
+                    'sorting': {
+                        'sort_by': sort_by,
+                        'sort_order': sort_order
                     }
                 }, status=status.HTTP_200_OK)
                 
