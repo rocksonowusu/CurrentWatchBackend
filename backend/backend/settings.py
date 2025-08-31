@@ -27,8 +27,9 @@ SECRET_KEY = 'django-insecure-i_toolz^li+5xz(!j7=cueomn^rnr#dqr*mqu8*r7vyuz2jq+q
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+ALLOWED_HOSTS = ['currentwatchbackend.onrender.com', '127.0.0.1', 'localhost']
 
-ALLOWED_HOSTS = ['*','rockhy.pythonanywhere.com','10.200.91.63', 'localhost', '127.0.0.1']
+
 
 
 
@@ -50,6 +51,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', 
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -89,6 +91,10 @@ CHANNEL_LAYERS = {
         },
         },
 }
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://currentwatchbackend.onrender.com',
+]
 
 CORS_ALLOW_ALL_ORIGINS = True
 
@@ -145,10 +151,9 @@ USE_TZ = True
 
 
 STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  # For collected static files
+STATICFILES_DIRS = []  # Optional, if you have extra static files
 
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-# Optional: If you also serve user uploads
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
