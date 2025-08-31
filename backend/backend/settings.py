@@ -86,25 +86,14 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 REDIS_URL = os.environ.get('REDIS_URL')
 
 # Redis configuration
-REDIS_URL = os.environ.get('REDIS_URL')
+# REDIS_URL = os.environ.get('REDIS_URL')
 
-if REDIS_URL:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [REDIS_URL],
-            },
-        },
+# In your settings.py - temporarily disable Redis
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
     }
-    print(f"Using Redis at: {REDIS_URL.split('@')[1]}")  
-else:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels.layers.InMemoryChannelLayer"
-        }
-    }
-    print("Using in-memory channel layer")
+}
 
 
 CSRF_TRUSTED_ORIGINS = [
