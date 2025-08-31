@@ -83,14 +83,27 @@ ASGI_APPLICATION = 'backend.asgi.application'
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)]
+REDIS_URL = os.environ.get('REDIS_URL')
+
+if REDIS_URL:
+    # Production with Redis Labs
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+            },
         },
-        },
-}
+    }
+    print(f"Using Redis: {REDIS_URL}")
+else:
+    # Fallback to in-memory (for local development)
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer"
+        }
+    }
+    print("Using in-memory channel layer")
 
 CSRF_TRUSTED_ORIGINS = [
     'https://currentwatchbackend.onrender.com',
