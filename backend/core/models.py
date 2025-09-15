@@ -345,3 +345,5 @@ class ActivityLog(models.Model):
             user_agent=user_agent
         )
 
+
+

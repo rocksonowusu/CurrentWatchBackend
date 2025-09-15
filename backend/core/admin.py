@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils.crypto import get_random_string
 from .models import UserProfile, Room, Device, Controller, DeviceCommand, DeviceAlert, ActivityLog
 from django.utils.html import format_html
 import qrcode
@@ -128,6 +129,27 @@ class ControllerAdmin(admin.ModelAdmin):
             total_cleared += cleared
         self.message_user(request, f"Cleared {total_cleared} pending commands")
     clear_pending_commands.short_description = "Clear pending commands for selected controllers"
+
+    def generate_bulk_qr(self, request, queryset):
+        for controller in queryset:
+            devices_data = []
+            for device in controller.devices.all():
+                devices_data.append({
+                    'device_id': device.device_id,
+                    'name': device.name,
+                    'type': device.type,
+                    'hardware_pin': device.hardware_pin
+                })
+            
+            bulk_qr = BulkDeviceQR.objects.create(
+                qr_id=get_random_string(12),
+                controller=controller,
+                devices_data=devices_data
+            )
+            
+            self.message_user(request, f"Generated bulk QR for {controller.controller_id}: {bulk_qr.qr_id}")
+
+    generate_bulk_qr.short_description = "Generate Bulk QR for all devices"
 
 class DeviceAdmin(admin.ModelAdmin):
     list_display = (
@@ -360,6 +382,9 @@ class ActivityLogAdmin(admin.ModelAdmin):
     date_hierarchy = 'created_at'
     list_select_related = ('user', 'device', 'controller', 'room')
 
+
+
+
 # Register models with admin
 admin.site.register(UserProfile, UserProfileAdmin)
 admin.site.register(Room, RoomAdmin)
@@ -368,6 +393,7 @@ admin.site.register(Device, DeviceAdmin)
 admin.site.register(DeviceCommand, DeviceCommandAdmin)
 admin.site.register(DeviceAlert, DeviceAlertAdmin)
 admin.site.register(ActivityLog, ActivityLogAdmin)
+
 
 # Customize admin site header and title
 admin.site.site_header = "CurrentWatch Smart Home Admin"
